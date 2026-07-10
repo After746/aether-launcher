@@ -11,6 +11,8 @@
 
 #![allow(dead_code)]
 
+mod natives;
+
 use crate::error::{AetherError, Result};
 use crate::instance::store;
 use crate::instance::Instance;
@@ -221,6 +223,9 @@ pub fn prepare_launch(instance: &Instance) -> Result<LaunchPlan> {
 
     // 3. Verificacion del client.jar contra su SHA1.
     verify_client_jar(&paths.client_jar, &detail.downloads.client.sha1)?;
+    
+    // 3b. Extraccion de natives (.dll/.so/.dylib) al directorio de la instancia.
+    natives::extract_natives(&detail, &paths.natives_dir)?;
 
     // 4. Classpath (librerias permitidas + client.jar).
     let classpath = build_classpath(&detail, &paths.libraries_dir, &paths.client_jar);
