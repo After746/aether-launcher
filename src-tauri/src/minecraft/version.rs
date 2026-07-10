@@ -13,6 +13,15 @@ pub struct VersionDetail {
     pub libraries: Vec<Library>,
     #[serde(rename = "javaVersion", default)]
     pub java_version: Option<JavaVersion>,
+    // --- agregado: preparacion de lanzamiento ---
+    #[serde(rename = "mainClass")]
+    pub main_class: String,
+    /// Formato moderno (>= 1.13). Ausente en versiones antiguas.
+    #[serde(default)]
+    pub arguments: Option<Arguments>,
+    /// Formato legacy (< 1.13): string plano de argumentos de juego.
+    #[serde(rename = "minecraftArguments", default)]
+    pub minecraft_arguments: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -69,12 +78,16 @@ pub struct Rule {
     pub action: String,
     #[serde(default)]
     pub os: Option<OsRule>,
+    #[serde(default)]
+    pub features: Option<std::collections::HashMap<String, bool>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct OsRule {
     #[serde(default)]
     pub name: Option<String>,
+    #[serde(default)]
+    pub arch: Option<String>,
 }
 
 /// Nombre del SO segun la convencion de Mojang.
@@ -131,4 +144,69 @@ pub struct VersionOption {
     pub id: String,
     pub kind: String,
     pub release_time: String,
+}
+
+/// Bloque `arguments` del version.json moderno.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Arguments {
+    #[serde(default)]
+    pub jvm: Vec<ArgElement>,
+    #[serde(default)]
+    pub game: Vec<ArgElement>,
+}
+
+/// Un argumento: string simple o condicional (reglas + valor).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum ArgElement {
+    Simple(String),
+    Conditional { rules: Vec<Rule>, value: ArgValue },
+}
+
+/// El `value` de un argumento condicional puede ser uno o varios strings.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum ArgValue {
+    Single(String),
+    Many(Vec<String>),
+}
+
+/// Evalua allow/disallow para el entorno actual (SO + arch + features).
+/// Usada tanto por librerias como por argumentos.
+pub fn rules_allow(rules: &[Rule]) -> bool {
+    if rules.is_empty() {
+        return true;
+    }
+    let mut allow = false;
+    for rule in rules {
+        if rule_matches(rule) {
+            allow = rule.action == "allow";
+        }
+    }
+    allow
+}
+
+fn rule_matches(rule: &Rule) -> bool {
+    if let Some(os) = &rule.os {
+        if let Some(name) = &os.name {
+            if name != current_os() {
+                return false;
+            }
+        }
+        if let Some(arch) = &os.arch {
+            if arch != std::env::consts::ARCH {
+                return false;
+            }
+        }
+    }
+    // No habilitamos ningun feature (demo, custom_resolution, quick_play...).
+    // Un feature esperado en `true` nunca aplica todavia.
+    if let Some(features) = &rule.features {
+        for expected in features.values() {
+            if *expected {
+                return false;
+            }
+        }
+    }
+    true
 }

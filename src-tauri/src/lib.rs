@@ -4,6 +4,7 @@ mod download;
 mod error;
 mod install;
 mod instance;
+mod launch;
 mod minecraft;
 
 use std::sync::Mutex;
