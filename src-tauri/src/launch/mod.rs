@@ -158,15 +158,26 @@ pub fn build_classpath(
     cp
 }
 
-/// Resuelve el binario de Java: primero el configurado en la instancia,
-/// luego JAVA_HOME, y como ultimo recurso "java" del PATH.
-pub fn resolve_java(instance: &Instance) -> PathBuf {
+/// Resuelve el binario de Java segun prioridad:
+/// 1. Java configurado manualmente en la instancia.
+/// 2. Java requerido por version.json (buscado en instalaciones conocidas).
+/// 3. JAVA_HOME.
+/// 4. "java" del PATH.
+pub fn resolve_java(instance: &Instance, required_major: Option<u32>) -> PathBuf {
+    // 1. Java configurado manualmente en la instancia.
     if let Some(configured) = &instance.java_path {
         let p = PathBuf::from(configured);
         if p.exists() {
             return p;
         }
     }
+    // 2. Java requerido por version.json.
+    if let Some(major) = required_major {
+        if let Some(found) = find_java_for_major(major) {
+            return found;
+        }
+    }
+    // 3. JAVA_HOME.
     if let Ok(home) = std::env::var("JAVA_HOME") {
         if !home.is_empty() {
             let p = PathBuf::from(home).join("bin").join(java_bin_name());
@@ -175,7 +186,85 @@ pub fn resolve_java(instance: &Instance) -> PathBuf {
             }
         }
     }
+    // 4. PATH.
     PathBuf::from(java_bin_name())
+}
+
+/// Busca una instalacion de Java cuyo major coincida con `major`, recorriendo
+/// los directorios de instalacion tipicos de cada SO. Devuelve la ruta al
+/// binario (bin/java[.exe]) del primer match.
+fn find_java_for_major(major: u32) -> Option<PathBuf> {
+    for home in candidate_java_homes() {
+        if java_major_of(&home) == Some(major) {
+            let bin = home.join("bin").join(java_bin_name());
+            if bin.exists() {
+                return Some(bin);
+            }
+        }
+    }
+    None
+}
+
+/// Lista los JAVA_HOME candidatos: cada subcarpeta de los directorios de
+/// instalacion habituales (Adoptium, Microsoft, Zulu, Corretto, etc.).
+fn candidate_java_homes() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    for env in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"] {
+        if let Ok(base) = std::env::var(env) {
+            let base = PathBuf::from(base);
+            roots.push(base.join("Java"));
+            roots.push(base.join("Eclipse Adoptium"));
+            roots.push(base.join("Microsoft"));
+            roots.push(base.join("Zulu"));
+            roots.push(base.join("Amazon Corretto"));
+            roots.push(base.join("BellSoft"));
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        roots.push(PathBuf::from("/usr/lib/jvm"));
+        roots.push(PathBuf::from("/usr/java"));
+    }
+    #[cfg(target_os = "macos")]
+    roots.push(PathBuf::from("/Library/Java/JavaVirtualMachines"));
+
+    let mut homes = Vec::new();
+    for root in roots {
+        if let Ok(entries) = std::fs::read_dir(&root) {
+            for e in entries.flatten() {
+                let p = e.path();
+                if !p.is_dir() {
+                    continue;
+                }
+                // macOS guarda el home real en Contents/Home.
+                let mac_home = p.join("Contents").join("Home");
+                homes.push(if mac_home.is_dir() { mac_home } else { p });
+            }
+        }
+    }
+    homes
+}
+
+/// Lee el archivo `release` de un JAVA_HOME y extrae el major de JAVA_VERSION.
+fn java_major_of(java_home: &Path) -> Option<u32> {
+    let content = std::fs::read_to_string(java_home.join("release")).ok()?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("JAVA_VERSION=") {
+            return parse_java_major(rest.trim().trim_matches('"'));
+        }
+    }
+    None
+}
+
+/// "1.8.0_402" -> 8 ; "17.0.9" -> 17 ; "21" -> 21.
+fn parse_java_major(v: &str) -> Option<u32> {
+    if let Some(rest) = v.strip_prefix("1.") {
+        rest.split('.').next()?.parse().ok()
+    } else {
+        v.split(['.', '_', '-']).next()?.parse().ok()
+    }
 }
 
 /// Sustituye todas las variables ${...} conocidas en una plantilla.
@@ -239,9 +328,9 @@ pub fn prepare_launch(instance: &Instance) -> Result<LaunchPlan> {
         .collect::<Vec<_>>()
         .join(&sep);
 
-    // 5. Resolucion del Java (configurado -> JAVA_HOME -> PATH).
-    let java = resolve_java(instance);
-
+    // 5. Resolucion del Java (configurado -> version.json -> JAVA_HOME -> PATH).
+    let java = resolve_java(instance, detail.java_version.as_ref().map(|j| j.major_version));
+    
     // 6. Tabla de variables para la sustitucion.
     let mut vars: HashMap<&str, String> = HashMap::new();
     vars.insert("natives_directory", paths.natives_dir.to_string_lossy().to_string());
