@@ -6,6 +6,7 @@ mod install;
 mod instance;
 mod launch;
 mod minecraft;
+mod runtime;
 
 use std::sync::Mutex;
 
@@ -43,7 +44,9 @@ pub fn run() {
             install::commands::install_instance,
             install::commands::cancel_install,
             install::commands::list_mc_versions,
-            launch::commands::launch_instance
+            launch::commands::launch_instance,
+            runtime::commands::resolve_runtime,
+            runtime::commands::required_java_for_version
         ])
         .run(tauri::generate_context!())
         .expect("error al arrancar Aether Launcher");
