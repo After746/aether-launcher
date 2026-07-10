@@ -7,6 +7,8 @@
 
 pub mod commands;
 pub mod detect;
+pub mod install; 
+pub mod manifest;
 pub mod paths;
 
 use serde::{Deserialize, Serialize};
@@ -51,4 +53,34 @@ pub struct RuntimeResolution {
     pub managed: Option<ManagedRuntime>,
     /// true si hay un runtime administrado listo para usar.
     pub ready: bool,
+    
+}
+/// Eventos de progreso emitidos durante la descarga de un runtime.
+#[derive(Clone, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RuntimeEvent {
+    Started {
+        major: u32,
+        version: String,
+        total_files: u64,
+        total_bytes: u64,
+    },
+    Phase {
+        phase: String,
+    },
+    Progress {
+        files_done: u64,
+        total_files: u64,
+        bytes_done: u64,
+        total_bytes: u64,
+        current_file: String,
+        speed_bps: u64,
+    },
+    Done {
+        major: u32,
+        java_path: String,
+    },
+    Failed {
+        message: String,
+    },
 }

@@ -46,7 +46,8 @@ pub fn run() {
             install::commands::list_mc_versions,
             launch::commands::launch_instance,
             runtime::commands::resolve_runtime,
-            runtime::commands::required_java_for_version
+            runtime::commands::required_java_for_version,
+            runtime::commands::download_runtime
         ])
         .run(tauri::generate_context!())
         .expect("error al arrancar Aether Launcher");
