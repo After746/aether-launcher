@@ -12,6 +12,7 @@
 #![allow(dead_code)]
 
 mod natives;
+mod process;
 
 use crate::error::{AetherError, Result};
 use crate::instance::store;
@@ -20,6 +21,7 @@ use crate::minecraft::version::{rules_allow, ArgElement, ArgValue, VersionDetail
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+pub use process::{execute_launch_plan, launch_instance, LaunchedProcess};
 
 /// Separador de classpath segun el SO (Windows usa ';', el resto ':').
 fn classpath_separator() -> char {
