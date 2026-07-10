@@ -16,6 +16,14 @@ use std::time::Instant;
 use tauri::ipc::Channel;
 use tokio_util::sync::CancellationToken;
 
+/// Emite un evento de progreso solo si hay un canal conectado. Permite que la
+/// misma logica sirva para el comando IPC (Some) y para el launch (None).
+fn emit(on_event: Option<&Channel<RuntimeEvent>>, ev: RuntimeEvent) {
+    if let Some(ch) = on_event {
+        let _ = ch.send(ev);
+    }
+}
+
 /// Marca un archivo como ejecutable (0o755) en Unix; no-op en Windows.
 #[cfg(unix)]
 fn mark_executable(path: &Path) -> Result<()> {
@@ -55,19 +63,22 @@ fn make_link(link: &Path, target: &str) -> Result<()> {
 
 /// Descarga, verifica y extrae el runtime de Java para `major` dentro de
 /// `<data_dir>/runtimes/java-<major>/`. Devuelve el runtime administrado listo.
+///
+/// `on_event` es opcional: `Some` reporta progreso (comando IPC); `None`
+/// corre silencioso (cuando lo dispara el launch).
 pub async fn download_runtime(
     client: &reqwest::Client,
     major: u32,
-    on_event: &Channel<RuntimeEvent>,
+    on_event: Option<&Channel<RuntimeEvent>>,
     cancel: CancellationToken,
 ) -> Result<ManagedRuntime> {
     // --- Fase A: resolver plataforma y componente ---
-    let _ = on_event.send(RuntimeEvent::Phase { phase: "index".into() });
+    emit(on_event, RuntimeEvent::Phase { phase: "index".into() });
     let platform_key = manifest::mojang_platform_key()?;
     let index = manifest::fetch_index(client).await?;
     let release = manifest::select_release(&index, platform_key, major)?;
 
-    let _ = on_event.send(RuntimeEvent::Phase { phase: "manifest".into() });
+    emit(on_event, RuntimeEvent::Phase { phase: "manifest".into() });
     let man = manifest::fetch_manifest(client, &release.manifest.url).await?;
 
     // --- Fase B: planificar archivos, directorios y links ---
@@ -110,19 +121,23 @@ pub async fn download_runtime(
     let total_bytes: u64 = tasks.iter().map(|t| t.size).sum();
     progress.total_files.store(total_files, Ordering::Relaxed);
     progress.total_bytes.store(total_bytes, Ordering::Relaxed);
-    let _ = on_event.send(RuntimeEvent::Started {
-        major,
-        version: release.version.name.clone(),
-        total_files,
-        total_bytes,
-    });
-    let _ = on_event.send(RuntimeEvent::Phase { phase: "download".into() });
+    emit(
+        on_event,
+        RuntimeEvent::Started {
+            major,
+            version: release.version.name.clone(),
+            total_files,
+            total_bytes,
+        },
+    );
+    emit(on_event, RuntimeEvent::Phase { phase: "download".into() });
 
     let current = Arc::new(tokio::sync::Mutex::new(String::new()));
     let reporter = {
         let progress = progress.clone();
         let current = current.clone();
-        let on_event = on_event.clone();
+        // Clonamos a un Option<Channel> 'static para poder moverlo al task.
+        let on_event = on_event.cloned();
         let cancel = cancel.clone();
         tokio::spawn(async move {
             let start = Instant::now();
@@ -141,14 +156,17 @@ pub async fn download_runtime(
                 last_bytes = bytes;
                 last_t = now;
                 let cur = current.lock().await.clone();
-                let _ = on_event.send(RuntimeEvent::Progress {
-                    files_done: done,
-                    total_files,
-                    bytes_done: bytes,
-                    total_bytes,
-                    current_file: cur,
-                    speed_bps: speed,
-                });
+                emit(
+                    on_event.as_ref(),
+                    RuntimeEvent::Progress {
+                        files_done: done,
+                        total_files,
+                        bytes_done: bytes,
+                        total_bytes,
+                        current_file: cur,
+                        speed_bps: speed,
+                    },
+                );
                 if done >= total_files {
                     break;
                 }
@@ -161,7 +179,7 @@ pub async fn download_runtime(
     result?;
 
     // --- Fase D: post-proceso (links + permisos) ---
-    let _ = on_event.send(RuntimeEvent::Phase { phase: "finalize".into() });
+    emit(on_event, RuntimeEvent::Phase { phase: "finalize".into() });
     for (link, target) in links {
         make_link(&link, &target)?;
     }
@@ -171,14 +189,17 @@ pub async fn download_runtime(
 
     // --- Fase E: verificar que el binario quedo disponible ---
     let managed = detect::find_managed_runtime(major)?.ok_or_else(|| {
-        AetherError::InvalidState(format!(
-            "el runtime java-{major} se descargo pero no se encontro el ejecutable"
+        AetherError::Runtime(format!(
+            "el runtime java-{major} se descargó pero no se encontró el ejecutable"
         ))
     })?;
 
-    let _ = on_event.send(RuntimeEvent::Done {
-        major,
-        java_path: managed.java_path.clone(),
-    });
+    emit(
+        on_event,
+        RuntimeEvent::Done {
+            major,
+            java_path: managed.java_path.clone(),
+        },
+    );
     Ok(managed)
 }

@@ -33,7 +33,7 @@ pub async fn download_runtime(
     }
 
     let cancel = CancellationToken::new();
-    match install::download_runtime(&state.http, major, &on_event, cancel).await {
+    match install::download_runtime(&state.http, major, Some(&on_event), cancel).await {
         Ok(managed) => Ok(managed),
         Err(e) => {
             let _ = on_event.send(RuntimeEvent::Failed { message: e.to_string() });

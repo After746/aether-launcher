@@ -10,6 +10,7 @@ pub mod detect;
 pub mod install; 
 pub mod manifest;
 pub mod paths;
+pub mod provide;
 
 use serde::{Deserialize, Serialize};
 

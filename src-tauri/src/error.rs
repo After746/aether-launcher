@@ -28,6 +28,9 @@ pub enum AetherError {
 
     #[error("no implementado: {0}")]
     NotImplemented(String),
+    
+    #[error("runtime de Java: {0}")]
+    Runtime(String),
 
     #[error("hash SHA1 invalido para {path}")]
     HashMismatch {
@@ -51,6 +54,7 @@ impl Serialize for AetherError {
             AetherError::InvalidState(_) => "INVALID_STATE",
             AetherError::NotImplemented(_) => "NOT_IMPLEMENTED",
             AetherError::HashMismatch { .. } => "HASH_MISMATCH",
+            AetherError::Runtime(_) => "RUNTIME",
         };
 
         #[derive(Serialize)]
