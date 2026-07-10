@@ -13,6 +13,7 @@
 
 mod natives;
 mod process;
+pub mod commands;
 
 use crate::error::{AetherError, Result};
 use crate::instance::store;

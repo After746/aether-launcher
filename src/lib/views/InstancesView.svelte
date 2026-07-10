@@ -10,6 +10,7 @@
   import type { Instance, InstanceSummary } from '../ipc/types';
   import { fly, fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import { launch } from '../stores/launch.svelte';
 
   let showForm = $state(false);
   let editing = $state<Instance | null>(null);
@@ -20,7 +21,7 @@
 
   function openCreate() { editing = null; showForm = true; }
   async function openEdit(s: InstanceSummary) { editing = await instances.get(s.id); showForm = true; }
-  function playOne(s: InstanceSummary) { instances.select(s.id); router.navigate('home'); }
+  function playOne(s: InstanceSummary) { instances.select(s.id); launch.play(s.id); }
   function installOne(s: InstanceSummary) { instances.select(s.id); install.start(s.id); }
 
   async function confirmDelete() {
@@ -78,11 +79,16 @@
   {/snippet}
 </Modal>
 
+{#if launch.error}
+  <p class="launch-error">No se pudo iniciar: {launch.error}</p>
+  {/if}
+
 <style>
   .page { display: flex; flex-direction: column; height: 100%; max-width: 1100px; margin: 0 auto; }
   .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
   .page-head h2 { font-size: 26px; font-weight: 700; }
   .page-head p { color: var(--muted); margin-top: 4px; }
+  .launch-error { color: #ff7a8a; font-size: 13px; margin-bottom: 12px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; align-content: start; }
   .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; padding-bottom: 40px; }
   .orb { width: 92px; height: 92px; border-radius: 50%; margin-bottom: 20px; background: radial-gradient(circle at 30% 30%, var(--accent), var(--accent-2)); box-shadow: 0 0 60px var(--accent-glow); animation: float 4s ease-in-out infinite; }

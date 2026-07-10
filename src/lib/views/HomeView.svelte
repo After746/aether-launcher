@@ -10,6 +10,7 @@
   import { LOADER_LABEL, STATUS_LABEL } from '../ipc/types';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import { launch } from '../stores/launch.svelte';
 
   onMount(() => { if (!instances.loaded) instances.load(); });
 
@@ -35,13 +36,18 @@
   }
 
   function primaryAction() {
-    if (!sel) { router.navigate('instances'); return; }
-    if (sel.status === 'ready') {
-      // El lanzamiento real de la JVM llega en la Fase 4.
-      return;
-    }
-    install.start(sel.id);
+  if (!sel) {
+    router.navigate('instances');
+    return;
   }
+
+  if (sel.status === 'ready') {
+    launch.play(sel.id);
+    return;
+  }
+
+  install.start(sel.id);
+}
 
   const ctaLabel = $derived(!sel ? 'CREAR INSTANCIA' : sel.status === 'ready' ? 'JUGAR' : 'INSTALAR');
   const ctaSub = $derived(
