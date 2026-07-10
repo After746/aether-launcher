@@ -4,7 +4,7 @@
 
   export type Option = { value: string; label: string; hint?: string };
 
-  let { value = $bindable(), options, placeholder = 'Seleccionaâ€¦' }: {
+  let { value = $bindable(), options, placeholder = 'Selecciona…' }: {
     value: string;
     options: Option[];
     placeholder?: string;
@@ -12,31 +12,75 @@
 
   let open = $state(false);
   let root: HTMLDivElement;
+  let menuEl: HTMLDivElement;
+  let openUpward = $state(false);
+  let menuStyle = $state('');
 
   const current = $derived(options.find((o) => o.value === value) ?? null);
 
+  const MENU_MAX_HEIGHT = 240;
+  const GAP = 6;
+  const VIEWPORT_MARGIN = 12;
+
+  // El menú se porta a document.body para escapar del `overflow: hidden`
+  // (y del containing block que crea el `backdrop-filter`) del modal padre.
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return { destroy: () => node.remove() };
+  }
+
+  function updatePosition() {
+    if (!root) return;
+    const rect = root.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_MARGIN;
+    const spaceAbove = rect.top - VIEWPORT_MARGIN;
+
+    openUpward = spaceBelow < MENU_MAX_HEIGHT && spaceAbove > spaceBelow;
+
+    const available = Math.max(120, Math.min(MENU_MAX_HEIGHT, openUpward ? spaceAbove : spaceBelow));
+
+    menuStyle = openUpward
+      ? `left:${rect.left}px; width:${rect.width}px; bottom:${window.innerHeight - rect.top + GAP}px; max-height:${available}px;`
+      : `left:${rect.left}px; width:${rect.width}px; top:${rect.bottom + GAP}px; max-height:${available}px;`;
+  }
+
+  function toggle() {
+    if (!open) updatePosition();
+    open = !open;
+  }
   function choose(v: string) {
     value = v;
     open = false;
   }
   function onWindowClick(e: MouseEvent) {
-    if (root && !root.contains(e.target as Node)) open = false;
+    if (!open) return;
+    const t = e.target as Node;
+    if (root && !root.contains(t) && menuEl && !menuEl.contains(t)) open = false;
   }
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') open = false;
   }
+  function onReposition() {
+    if (open) updatePosition();
+  }
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={onKey} />
+<svelte:window onclick={onWindowClick} onkeydown={onKey} onresize={onReposition} onscroll={onReposition} />
 
 <div class="dd" bind:this={root}>
-  <button type="button" class="trigger" class:open onclick={() => (open = !open)}>
+  <button type="button" class="trigger" class:open onclick={toggle}>
     <span class="value" class:placeholder={!current}>{current ? current.label : placeholder}</span>
     <span class="chev" class:open><Icon name="chevron" size={16} /></span>
   </button>
 
   {#if open}
-    <div class="menu" transition:slide={{ duration: 160 }}>
+    <div
+      class="menu"
+      class:up={openUpward}
+      style={menuStyle}
+      use:portal
+      bind:this={menuEl}
+      transition:slide={{ duration: 160 }}>
       {#each options as opt (opt.value)}
         <button
           type="button"
@@ -76,12 +120,8 @@
   .chev.open { transform: rotate(90deg); }
 
   .menu {
-    position: absolute;
-    z-index: 20;
-    top: calc(100% + 6px);
-    left: 0;
-    right: 0;
-    max-height: 240px;
+    position: fixed;
+    z-index: 1000;
     overflow-y: auto;
     padding: 6px;
     border-radius: var(--radius-md);
